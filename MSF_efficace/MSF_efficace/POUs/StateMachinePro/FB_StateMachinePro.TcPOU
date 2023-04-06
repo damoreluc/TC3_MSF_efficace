@@ -1,0 +1,202 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_StateMachinePro" Id="{628eea9b-d3a1-4a41-bcf1-9872281aa285}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_StateMachinePro
+VAR_INPUT
+    (* main inputs to the state machine *)	
+	bEnable : BOOL;
+	bStart : BOOL;
+	bStop : BOOL;
+	
+	(* other inputs from the plant *)
+	bBottle : BOOL;				// fotocellula FC1
+END_VAR
+
+VAR_OUTPUT
+	(* state machine internals, useful for debugging  *)
+	eStep :  E_Step;
+	tStepTime : TIME;
+	eErrStep : E_Step;
+	nErrId : DINT;
+	
+	(* control signals to the plant *)
+	bConveyor : BOOL;			// nastro trasportatore
+	bWater : BOOL;				// riempimento acqua
+	bMint : BOOL;				// riempimento menta	
+	bCorking : BOOL;			// inserimento del tappo	
+END_VAR
+
+VAR_IN_OUT
+	
+END_VAR
+
+VAR
+	(* state machine internals *)
+	bInitialized :  BOOL;		// state machine initialized
+	eNewstep :  E_Step;			// new step requested to be performed
+	bEntryact :  BOOL;			// is set to False, performs the state entry action
+	fbTonStep :  TON;			// elapsed time on each state machine step
+	
+	(* filters on stop input *)
+	fbRtStop : R_TRIG;			// rise trigger on stop signal
+	bStopRequest : BOOL;		// set on fbRtStop output
+
+	(* filters on other input from plant *)
+	fbTonBottle : TON;
+	fbRtBottle : R_TRIG;
+	
+	(* other process variables *)
+	nFillingCycles : USINT;		// number of filling cycles
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT bInitialized THEN
+	(* here you can wait events from other controllers *)
+	eNewstep := E_Step.NoStep;
+	eStep := E_Step.Stop;
+	bEntryact := FALSE;
+	bInitialized := TRUE;		
+ELSE	
+	(* state machine disabled or failure *)
+	IF NOT bEnable THEN
+		eNewstep := E_Step.NeOrError;
+	END_IF;
+	
+	(* update eStep with the required step to perform *)
+	(* and set bEntryact to FALSE in order to enable the Entry action *)
+	IF eNewstep <> E_Step.NoStep THEN
+		eStep := eNewstep;
+		eNewstep := E_Step.NoStep;
+		bEntryact := FALSE;
+	END_IF;
+
+	(* do filters on signals *)
+	fbTonBottle(IN:= bBottle, PT:= T#500MS);	// filter on bottle presence sensor
+	
+	(* do edge detection *)
+	fbRtBottle(CLK:= fbTonBottle.Q);
+	fbRtStop(CLK:= bStop);
+	
+	(* do requests, for example to stop the machine *)
+	IF fbRtStop.Q THEN
+		bStopRequest := TRUE;
+	END_IF; 
+	
+	(* the main switch-case *)
+	CASE eStep OF
+		
+		(* ---- not Enabled or Error ---- *)
+		E_Step.NeOrError :
+			(* on entry action *)
+			IF NOT bEntryact THEN
+				bEntryact := TRUE;
+			END_IF;
+
+			(* body *)
+			bConveyor := FALSE;
+			bWater := FALSE;
+			bMint := FALSE;
+			bCorking := FALSE;
+			
+			nFillingCycles := 0;
+					
+			(* next state transition *)
+			IF bEnable THEN				
+				eNewstep := E_Step.Stop;				
+			END_IF;
+
+			(* on exit action *)
+			IF eNewstep <> E_Step.NoStep THEN
+				;
+			END_IF;		
+	
+		(* ----          Stop        ---- *)
+		E_Step.Stop:
+			(* on entry action *)
+			IF NOT bEntryact THEN
+				bStopRequest := FALSE;
+				bEntryact := TRUE;
+			END_IF;
+
+			(* body *)
+			bConveyor := FALSE;
+			bWater := FALSE;
+			bMint := FALSE;
+			bCorking := FALSE;
+			
+			nFillingCycles := 0;
+				
+			(* next state transition *)
+			IF bStart THEN
+				eNewstep := E_Step.Feeding;
+			END_IF
+			
+			(* on exit action *)
+			IF eNewstep <> E_Step.NoStep THEN
+				;
+			END_IF;
+	
+		(* ----        Feeding       ---- *)
+		E_Step.Feeding:
+			(* on entry action *)
+			IF NOT bEntryact THEN
+				bEntryact := TRUE;
+			END_IF;
+
+			(* body *)
+			bConveyor := TRUE;
+			bWater := FALSE;
+			bMint := FALSE;
+			bCorking := FALSE;
+		
+			(* next state transition *)
+			IF bStopRequest AND NOT bBottle THEN
+				eNewstep := E_Step.Stopping;
+			ELSE
+				IF fbRtBottle.Q THEN
+					eNewstep := E_Step.WaterFilling;
+				END_IF
+			END_IF
+			
+			(* on exit action *)
+			IF eNewstep <> E_Step.NoStep THEN
+				;
+			END_IF;
+			
+		(* ----       Stopping       ---- *)
+		E_Step.Stopping:
+			(* on entry action *)
+			IF NOT bEntryact THEN
+				bEntryact := TRUE;
+			END_IF;
+
+			(* body *)
+			bConveyor := FALSE;
+			bWater := tStepTime >= T#200MS AND tStepTime <= T#400MS;
+			bMint := tStepTime >= T#200MS AND tStepTime <= T#400MS;
+			bCorking := FALSE;
+		
+			(* next state transition *)
+			IF tStepTime >= T#2S THEN
+				eNewstep := E_Step.Stop;
+			END_IF; 
+			
+			(* on exit action *)
+			IF eNewstep <> E_Step.NoStep THEN
+				;
+			END_IF;		
+		ELSE
+			(* this happens also if we forget to code one step *)
+			eNewstep := E_Step.NeOrError;
+			eErrStep := E_Step.Unknown;
+			nErrId := -9;			
+	END_CASE;
+	
+	(* elapsed time into the current step *)
+	fbTonStep(IN := (eNewstep = E_Step.NoStep), PT := T#500H);
+	tStepTime := fbTonStep.ET;
+	
+END_IF;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

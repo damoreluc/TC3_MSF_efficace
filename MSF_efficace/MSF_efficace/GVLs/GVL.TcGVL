@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <GVL Name="GVL" Id="{6a8463cc-f1b2-413e-93de-177ccac036f3}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+	// input
+	bStart : BOOL;				// start button
+	bStop : BOOL;				// stop button
+	bBottle : BOOL;				// other inputs...		
+
+	// output
+	bConveyor : BOOL;			// conveyor motor
+	bWater : BOOL;				// other outputs...
+	bMint : BOOL;
+	bCorking : BOOL;
+								
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

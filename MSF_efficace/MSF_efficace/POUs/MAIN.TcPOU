@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="MAIN" Id="{41c4aa59-1c6a-4a73-9d14-43b9b6d789a2}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	fbStateMachinePro : FB_StateMachinePro;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[fbStateMachinePro(
+	bEnable:= TRUE, 
+	bStart:= GVL.bStart, 
+	bStop:= GVL.bStop, 
+	bBottle:= GVL.bBottle, 
+);
+
+GVL.bConveyor := fbStateMachinePro.bConveyor;
+GVL.bWater := fbStateMachinePro.bWater;
+GVL.bMint := fbStateMachinePro.bMint;	
+GVL.bCorking := fbStateMachinePro.bCorking;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>
